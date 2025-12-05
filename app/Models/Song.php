@@ -47,10 +47,11 @@ class Song extends Model
      */
     public function scopeSearch($query, string $search): mixed
     {
-        return $query->where(function ($q) use ($search) {
-            $q->where('title', 'like', "%{$search}%")
-                ->orWhere('number', '=', (int) $search);
-        });
+        if (is_numeric($search)) {
+            return $query->where('number', '=', (int) $search);
+        }else{
+            return $query->where('title', 'like', "%{$search}%");
+        }
     }
 
     /**

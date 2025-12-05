@@ -15,14 +15,18 @@ return new class extends Migration
             $table->id();
             $table->integer('number');
             $table->string('title');
-            $table->integer('type'); // 1 = Swahili (Nyimbo Za Wokovu), 2 = French (Chants de triomphe)
+            $table->integer('type');
             $table->text('content');
             $table->string('author')->nullable();
+
+            $table->boolean('is_favorite')->default(false);
+
             $table->timestamps();
 
             $table->index('number');
             $table->index('type');
             $table->index('title');
+            $table->index('is_favorite');
         });
     }
 

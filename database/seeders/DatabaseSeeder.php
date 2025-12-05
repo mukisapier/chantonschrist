@@ -24,6 +24,7 @@ class DatabaseSeeder extends Seeder
 
         $this->call([
             SongSeeder::class,
+            SettingSeeder::class,
         ]);
     }
 }

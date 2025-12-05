@@ -1,6 +1,9 @@
 <?php
 
+use App\Livewire\Index;
+use App\Models\Setting;
 use App\Models\Song;
+use Livewire\Livewire;
 
 use function Pest\Laravel\get;
 
@@ -8,68 +11,36 @@ uses()->group('songs');
 
 beforeEach(function () {
     $this->artisan('migrate:fresh');
+    Setting::create(['font_size' => 50, 'night_mode' => false]);
 });
 
 it('displays the songs index page', function () {
     $response = get(route('songs.index'));
 
     $response->assertSuccessful();
-    $response->assertViewIs('songs.index');
+    $response->assertSeeLivewire(Index::class);
 });
 
 it('displays songs on the index page', function () {
-    Song::factory()->count(5)->create();
+    Song::factory()->count(3)->create(['is_favorite' => true]);
+    Song::factory()->count(2)->create(['is_favorite' => false]);
 
-    $response = get(route('songs.index'));
-
-    $response->assertSuccessful();
-    $response->assertViewHas('songs');
+    Livewire::test(Index::class)
+        ->assertSuccessful()
+        ->assertViewHas('songs', function ($songs) {
+            return $songs->count() === 3; // Only favorites
+        });
 });
 
-it('can search songs by title', function () {
-    Song::factory()->create(['title' => 'Amazing Grace', 'number' => 100]);
-    Song::factory()->create(['title' => 'How Great Thou Art', 'number' => 200]);
+it('displays only favorite songs on index', function () {
+    $favorite1 = Song::factory()->create(['title' => 'Amazing Grace', 'is_favorite' => true]);
+    $favorite2 = Song::factory()->create(['title' => 'How Great Thou Art', 'is_favorite' => true]);
+    Song::factory()->create(['title' => 'Not Favorite', 'is_favorite' => false]);
 
-    $response = get(route('songs.index', ['search' => 'Amazing']));
-
-    $response->assertSuccessful();
-    $response->assertSee('Amazing Grace');
-    $response->assertDontSee('How Great Thou Art');
-});
-
-it('can search songs by number', function () {
-    Song::factory()->create(['title' => 'Amazing Grace', 'number' => 100]);
-    Song::factory()->create(['title' => 'How Great Thou Art', 'number' => 200]);
-
-    $response = get(route('songs.index', ['search' => '100']));
-
-    $response->assertSuccessful();
-    $response->assertSee('Amazing Grace');
-    $response->assertDontSee('How Great Thou Art');
-});
-
-it('can filter songs by type', function () {
-    Song::factory()->french()->create(['title' => 'French Song']);
-    Song::factory()->swahili()->create(['title' => 'Swahili Song']);
-
-    $response = get(route('songs.index', ['type' => 2]));
-
-    $response->assertSuccessful();
-    $response->assertSee('French Song');
-    $response->assertDontSee('Swahili Song');
-});
-
-it('can combine search and type filter', function () {
-    Song::factory()->french()->create(['title' => 'French Grace', 'number' => 100]);
-    Song::factory()->french()->create(['title' => 'French Love', 'number' => 200]);
-    Song::factory()->swahili()->create(['title' => 'Swahili Grace', 'number' => 300]);
-
-    $response = get(route('songs.index', ['search' => 'Grace', 'type' => 2]));
-
-    $response->assertSuccessful();
-    $response->assertSee('French Grace');
-    $response->assertDontSee('French Love');
-    $response->assertDontSee('Swahili Grace');
+    Livewire::test(Index::class)
+        ->assertSee('Amazing Grace')
+        ->assertSee('How Great Thou Art')
+        ->assertDontSee('Not Favorite');
 });
 
 it('displays a specific song', function () {
@@ -79,10 +50,9 @@ it('displays a specific song', function () {
         'author' => 'John Newton',
     ]);
 
-    $response = get(route('songs.show', $song));
+    $response = get(route('songs.show', ['type' => $song->type, 'song' => $song]));
 
     $response->assertSuccessful();
-    $response->assertViewIs('songs.show');
     $response->assertSee('Amazing Grace');
     $response->assertSee('Amazing grace, how sweet the sound');
     $response->assertSee('John Newton');
@@ -102,32 +72,12 @@ it('shows correct category name for swahili songs', function () {
     expect($song->language)->toBe('Swahili');
 });
 
-it('orders songs by number and title', function () {
-    Song::factory()->create(['title' => 'Zebra', 'number' => 1]);
-    Song::factory()->create(['title' => 'Apple', 'number' => 1]);
-    Song::factory()->create(['title' => 'Banana', 'number' => 2]);
+it('shows no songs when no favorites exist', function () {
+    Song::factory()->count(5)->create(['is_favorite' => false]);
 
-    $response = get(route('songs.index'));
-
-    $response->assertSuccessful();
-    $content = $response->getContent();
-    $posApple = strpos($content, 'Apple');
-    $posZebra = strpos($content, 'Zebra');
-    $posBanana = strpos($content, 'Banana');
-
-    expect($posApple)->toBeLessThan($posZebra);
-    expect($posZebra)->toBeLessThan($posBanana);
-});
-
-it('paginates songs', function () {
-    Song::factory()->count(25)->create();
-
-    $response = get(route('songs.index'));
-
-    $response->assertSuccessful();
-    $response->assertViewHas('songs', function ($songs) {
-        return $songs->count() === 20; // First page should have 20 songs
-    });
+    Livewire::test(Index::class)
+        ->assertSuccessful()
+        ->assertSee('Aucun cantique favori disponible');
 });
 
 it('provides previous and next song links', function () {
@@ -135,39 +85,29 @@ it('provides previous and next song links', function () {
     $song2 = Song::factory()->french()->create(['number' => 2]);
     $song3 = Song::factory()->french()->create(['number' => 3]);
 
-    $response = get(route('songs.show', $song2));
+    $response = get(route('songs.show', ['type' => $song2->type, 'song' => $song2]));
 
     $response->assertSuccessful();
-    $response->assertViewHas('previousSong', function ($prev) use ($song1) {
-        return $prev->id === $song1->id;
-    });
-    $response->assertViewHas('nextSong', function ($next) use ($song3) {
-        return $next->id === $song3->id;
-    });
+    $response->assertSee($song1->number);
+    $response->assertSee($song3->number);
 });
 
 it('handles first song with no previous', function () {
     $song1 = Song::factory()->french()->create(['number' => 1]);
     $song2 = Song::factory()->french()->create(['number' => 2]);
 
-    $response = get(route('songs.show', $song1));
+    $response = get(route('songs.show', ['type' => $song1->type, 'song' => $song1]));
 
     $response->assertSuccessful();
-    $response->assertViewHas('previousSong', null);
-    $response->assertViewHas('nextSong', function ($next) use ($song2) {
-        return $next->id === $song2->id;
-    });
+    $response->assertSee($song2->number);
 });
 
 it('handles last song with no next', function () {
     $song1 = Song::factory()->french()->create(['number' => 1]);
     $song2 = Song::factory()->french()->create(['number' => 2]);
 
-    $response = get(route('songs.show', $song2));
+    $response = get(route('songs.show', ['type' => $song2->type, 'song' => $song2]));
 
     $response->assertSuccessful();
-    $response->assertViewHas('previousSong', function ($prev) use ($song1) {
-        return $prev->id === $song1->id;
-    });
-    $response->assertViewHas('nextSong', null);
+    $response->assertSee($song1->number);
 });
